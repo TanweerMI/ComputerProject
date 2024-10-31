@@ -1,71 +1,77 @@
-import cv2
-import tensorflow as tf
-import tensorflow_hub as hub
-
-model = hub.load('https://tfhub.dev/tensorflow/ssd_mobilenet_v2/2')
-coco_classes = [
-    "background", "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat", "traffic light", 
-    "fire hydrant", "stop sign", "parking meter", "bench", "bird", "cat", "dog", "horse", "sheep", "cow", "elephant", 
-    "bear", "zebra", "giraffe", "backpack", "umbrella", "handbag", "tie", "suitcase", "frisbee", "skis", "snowboard", 
-    "sports ball", "kite", "baseball bat", "baseball glove", "skateboard", "surfboard", "tennis racket", "bottle", 
-    "wine glass", "cup", "fork", "knife", "spoon", "bowl", "banana", "apple", "sandwich", "orange", "broccoli", "carrot", 
-    "hot dog", "pizza", "donut", "cake", "chair", "couch", "potted plant", "bed", "dining table", "toilet", "TV", 
-    "laptop", "mouse", "remote", "keyboard", "cell phone", "microwave", "oven", "toaster", "sink", "refrigerator", "book", 
-    "clock", "vase", "scissors", "teddy bear", "hair drier", "toothbrush"
-]
-
-grocery_items = {
-    47: "apple",
-    49: "orange",
-    50: "banana",
-    52: "carrot",
-    53: "broccoli",
-    44: "bottle",
-    41: "cup",
-    45: "bowl"
-}
+from __future__ import unicode_literals
+import speech_recognition as sr
+import base64
+import pyaudio
+import wave
+import requests
+import json
 
 
-cap = cv2.VideoCapture(0)
+def sendShazamApiReq(payload):
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+	url = "https://shazam.p.rapidapi.com/songs/detect"
 
-    image_resized = cv2.resize(frame, (320, 320))
-    image_rgb = cv2.cvtColor(image_resized, cv2.COLOR_BGR2RGB)
+	headers = {
+		"content-type": "text/plain",
+		"X-RapidAPI-Key": "9080104f94msh25a59c6b453f961p146faejsn108abd8993e3",
+		"X-RapidAPI-Host": "shazam.p.rapidapi.com"
+	}
 
-    input_tensor = tf.convert_to_tensor(image_rgb, dtype=tf.uint8)
-    input_tensor = tf.expand_dims(input_tensor, axis=0)  # Add batch dimension
+	response = requests.request("POST", url, data=payload, headers=headers)
 
-    results = model(input_tensor)
+	content = response.json()
 
-    detection_scores = results['detection_scores'].numpy()[0]
-    detection_classes = results['detection_classes'].numpy()[0].astype(int)
-    detection_boxes = results['detection_boxes'].numpy()[0]
+	print("\n", response.text ,"\n LOOK BELOW\n", )
+	print(type(content))
 
-    for i in range(len(detection_scores)):
-        if detection_scores[i] > 0.5:  # Confidence threshold
-            class_id = detection_classes[i]
+	print(content)
 
-            if class_id in grocery_items:
-                class_name = grocery_items[class_id]
+	with open("filename.json", "w") as write_file:
+		json.dump(content, write_file, indent=2)
+	
+	print("\n\n--------------------------------------------------------\n===============================")
+	print(content["track"]["title"])
+	
 
-                #get boundaries for the box
-                h, w, _ = frame.shape
-                box = detection_boxes[i] * [h, w, h, w]
-                y_min, x_min, y_max, x_max = box.astype(int)
 
-                #make box
-                cv2.rectangle(frame, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-                cv2.putText(frame, f"{class_name}: {detection_scores[i]:.2f}", (x_min, y_min - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-                
-    cv2.imshow('Grocery Detection', frame)
 
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+'''
+getting audio from the mic input and then making it mono (channels(1) = mono)
+'''
+CHUNK = 1024
+FORMAT = pyaudio.paInt16
+CHANNELS = 1 
+RATE = 44100
 
-cap.release()
-cv2.destroyAllWindows()
+p = pyaudio.PyAudio()
+
+stream = p.open(format=FORMAT, channels=CHANNELS, rate = RATE, input= True, frames_per_buffer=RATE)
+print("starting recording...")
+
+frames = []
+seconds = 5
+
+for i in range(0, int(RATE / CHUNK * seconds)):
+	data = stream.read(CHUNK)
+	frames.append(data)
+
+print("recording stopped.")
+stream.stop_stream()
+stream.close()
+p.terminate()
+
+wf = wave.open("monoFRaw.raw", "wb")
+wf.setnchannels(CHANNELS)
+wf.setsampwidth(p.get_sample_size(FORMAT))
+wf.setframerate(RATE)
+wf.writeframes(b"".join(frames))
+wf.close()
+
+
+
+'''encoding string to base 64 string'''
+encodeString = base64.b64encode(open("monoFRaw.raw", "rb").read())
+payload = encodeString #print type of encode string and see what it was and then regret on why your other file wasnt working and understand
+# print(type(payload)) #prints bytes
+
+print(sendShazamApiReq(payload=payload))
